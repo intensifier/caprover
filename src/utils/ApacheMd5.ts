@@ -83,12 +83,7 @@ export default class ApacheMd5 {
 
     // Exporting old style.
     static createApacheHash(password: string, salt?: string) {
-        let magic = ''
-        if (salt && salt.split('$')[1] === '1') {
-            magic = '$1$'
-        } else {
-            magic = '$apr1$'
-        }
+        const magic = salt && salt.split('$')[1] === '1' ? '$1$' : '$apr1$'
 
         salt = ApacheMd5.getSalt(salt)
 
@@ -96,7 +91,6 @@ export default class ApacheMd5 {
         let final = crypto
             .createHash('md5')
             .update(password + salt + password, 'ascii')
-            //@ts-ignore
             .digest(DIGEST_ENCODING)
 
         for (let pl = password.length; pl > 0; pl -= 16) {
@@ -111,11 +105,9 @@ export default class ApacheMd5 {
             }
         }
 
-        //@ts-ignore
         final = crypto
             .createHash('md5')
             .update(ctx, 'ascii')
-            //@ts-ignore
             .digest(DIGEST_ENCODING)
 
         // 1000 loop.
@@ -147,7 +139,6 @@ export default class ApacheMd5 {
             final = crypto
                 .createHash('md5')
                 .update(ctxl, 'ascii')
-                //@ts-ignore
                 .digest(DIGEST_ENCODING)
         }
 

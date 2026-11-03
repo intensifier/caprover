@@ -1,7 +1,7 @@
 import * as childProcess from 'child_process'
 import * as fs from 'fs-extra'
 import * as path from 'path'
-import * as git from 'simple-git/promise'
+import { simpleGit as git } from 'simple-git'
 import * as util from 'util'
 import * as uuid from 'uuid'
 import CaptainConstants from './CaptainConstants'
@@ -15,11 +15,11 @@ export default class GitHelper {
             /^\s*/,
             /(?:(?<proto>[a-z]+):\/\/)?/,
             /(?:(?<user>[a-z_][a-z0-9_-]+)@)?/,
-            /(?<domain>[^\s\/\?#:]+)/,
-            /(?::(?<port>[0-9]{1,5}))?/,
-            /(?:[\/:](?<owner>[^\s\/\?#:]+))?/,
-            /(?:[\/:](?<repo>[^\s\/\?#:.]+))/,
-            /(?:.git)?\/?\s*$/,
+            /(?<domain>[^\s/?#:]+)/,
+            /(?::(?<port>[0-9]{1,5}):?)?/,
+            /(?:[/:](?<owner>[^\s/?#:]+))?/,
+            /(?:[/:](?<repo>(?:[^\s?#:.]|\.(?!git\/?\s*$))+))/,
+            /(?:(?<suffix>.git))?\/?\s*$/,
         ]
             .map((r) => r.source)
             .join(''),
@@ -28,7 +28,6 @@ export default class GitHelper {
 
     static getLastHash(directory: string) {
         return git(directory) //
-            .silent(true) //
             .raw(['rev-parse', 'HEAD']) //
     }
 
@@ -74,12 +73,16 @@ export default class GitHelper {
                     )
                 })
                 .then(function () {
-                    return git() //
-                        .silent(true) //
+                    return git({
+                        allowEnvironment: ['GIT_SSH_COMMAND'],
+                        unsafe: {
+                            allowUnsafeSshCommand: true,
+                        },
+                    })
                         .env('GIT_SSH_COMMAND', `ssh -i ${SSH_KEY_PATH}`) //
                         .raw([
                             'clone',
-                            '--recursive',
+                            '--recurse-submodules',
                             '-b',
                             branch,
                             REPO_GIT_PATH,
@@ -87,6 +90,9 @@ export default class GitHelper {
                         ])
                 })
                 .then(function () {
+                    //
+                })
+                .finally(function () {
                     return fs.remove(SSH_KEY_PATH)
                 })
         } else {
@@ -99,8 +105,14 @@ export default class GitHelper {
             const remote = `${SCHEME}://${USER}:${PASS}@${REPO_PATH}`
             Logger.dev(`Cloning HTTPS ${remote}`)
             return git() //
-                .silent(true) //
-                .raw(['clone', '--recursive', '-b', branch, remote, directory])
+                .raw([
+                    'clone',
+                    '--recurse-submodules',
+                    '-b',
+                    branch,
+                    remote,
+                    directory,
+                ])
                 .then(function () {
                     //
                 })
@@ -138,10 +150,11 @@ export default class GitHelper {
             port: Number(found.groups?.port ?? 22),
             owner: found.groups?.owner ?? '',
             repo: found.groups?.repo,
+            suffix: found.groups?.suffix ?? '',
             get repoPath() {
                 return `ssh://${this.user}@${this.domain}:${this.port}/${
                     this.owner
-                }${this.owner && '/'}${this.repo}.git`
+                }${this.owner && '/'}${this.repo}${this.suffix}`
             },
         }
     }

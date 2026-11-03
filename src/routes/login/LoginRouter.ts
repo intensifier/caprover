@@ -4,6 +4,10 @@ import BaseApi from '../../api/BaseApi'
 import DataStoreProvider from '../../datastore/DataStoreProvider'
 import InjectionExtractor from '../../injection/InjectionExtractor'
 import Authenticator from '../../user/Authenticator'
+import {
+    CapRoverEventFactory,
+    CapRoverEventType,
+} from '../../user/events/ICapRoverEvent'
 import CaptainConstants from '../../utils/CaptainConstants'
 import CircularQueue from '../../utils/CircularQueue'
 
@@ -12,7 +16,8 @@ const router = express.Router()
 const failedLoginCircularTimestamps = new CircularQueue<number>(5)
 
 router.post('/', function (req, res, next) {
-    const password = req.body.password || ''
+    const password = `${req.body.password || ''}`
+    const otpToken = `${req.body.otpToken || ''}`
 
     if (!password) {
         const response = new BaseApi(
@@ -23,14 +28,42 @@ router.post('/', function (req, res, next) {
         return
     }
 
+    // if password is more than 29 characters, return error
+    if (password.length > 29) {
+        const response = new BaseApi(
+            ApiStatusCodes.STATUS_ERROR_GENERIC,
+            'password is too long - maximum 29 characters. If you had previously set a password longer than 29 characters, please use the first 29 characters.'
+        )
+        res.send(response)
+        return
+    }
+
     let authToken: string
 
     const namespace =
         InjectionExtractor.extractGlobalsFromInjected(res).namespace
+    const userManagerForLoginOnly =
+        InjectionExtractor.extractGlobalsFromInjected(
+            res
+        ).userManagerForLoginOnly
+    const otpAuthenticatorForLoginOnly =
+        userManagerForLoginOnly.otpAuthenticator
+    const eventLoggerForLoginOnly = userManagerForLoginOnly.eventLogger
 
     let loadedHashedPassword = ''
 
     Promise.resolve() //
+        .then(function () {
+            return otpAuthenticatorForLoginOnly.is2FactorEnabled()
+        })
+        .then(function (isEnabled) {
+            if (isEnabled && !otpToken) {
+                throw ApiStatusCodes.createError(
+                    ApiStatusCodes.STATUS_ERROR_OTP_REQUIRED,
+                    'Enter OTP token as well'
+                )
+            }
+        })
         .then(function () {
             const oldestKnownFailedLogin = failedLoginCircularTimestamps.peek()
             if (
@@ -47,6 +80,7 @@ router.post('/', function (req, res, next) {
         .then(function (savedHashedPassword) {
             loadedHashedPassword = savedHashedPassword
             return Authenticator.getAuthenticator(namespace).getAuthToken(
+                { otpToken, otpAuthenticator: otpAuthenticatorForLoginOnly },
                 password,
                 loadedHashedPassword
             )
@@ -55,7 +89,11 @@ router.post('/', function (req, res, next) {
             authToken = token
             return Authenticator.getAuthenticator(
                 namespace
-            ).getAuthTokenForCookies(password, loadedHashedPassword)
+            ).getAuthTokenForCookies(
+                { otpToken, otpAuthenticator: otpAuthenticatorForLoginOnly },
+                password,
+                loadedHashedPassword
+            )
         })
         .then(function (cookieAuth) {
             res.cookie(CaptainConstants.headerCookieAuth, cookieAuth)
@@ -64,6 +102,11 @@ router.post('/', function (req, res, next) {
                 'Login succeeded'
             )
             baseApi.data = { token: authToken }
+            eventLoggerForLoginOnly.trackEvent(
+                CapRoverEventFactory.create(CapRoverEventType.UserLoggedIn, {
+                    ip: req.headers['x-real-ip'] || 'unknown',
+                })
+            )
             res.send(baseApi)
         })
         .catch(function (err) {

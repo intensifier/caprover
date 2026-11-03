@@ -2,6 +2,7 @@ import ApiStatusCodes from '../api/ApiStatusCodes'
 import DataStore from '../datastore/DataStore'
 import RegistriesDataStore from '../datastore/RegistriesDataStore'
 import DockerApi from '../docker/DockerApi'
+import { DockerAuthObj, DockerRegistryConfig } from '../models/DockerAuthObj'
 import {
     IRegistryInfo,
     IRegistryType,
@@ -14,7 +15,10 @@ import BuildLog from './BuildLog'
 
 class DockerRegistryHelper {
     private registriesDataStore: RegistriesDataStore
-    constructor(dataStore: DataStore, private dockerApi: DockerApi) {
+    constructor(
+        dataStore: DataStore,
+        private dockerApi: DockerApi
+    ) {
         this.registriesDataStore = dataStore.getRegistriesDataStore()
     }
 
@@ -350,7 +354,7 @@ class DockerRegistryHelper {
                 Logger.e(err)
                 throw ApiStatusCodes.createError(
                     ApiStatusCodes.AUTHENTICATION_FAILED,
-                    'Authentication failed. Either username, password or domain is incorrect.'
+                    'Registry authentication failed. Either username, password or domain is incorrect.'
                 )
             })
     }
